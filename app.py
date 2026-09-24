@@ -1,9 +1,17 @@
 import json
+import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from task_list import TaskList
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TASKS = TaskList()
+
+STATIC_TYPES = {
+    ".css": "text/css",
+    ".js": "application/javascript",
+    ".html": "text/html",
+}
 
 
 class TaskRequestHandler(BaseHTTPRequestHandler):
@@ -15,14 +23,21 @@ class TaskRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_html_file(self):
-        with open("index.html", "rb") as f:
+    def _send_file(self, rel_path):
+        path = os.path.normpath(os.path.join(BASE_DIR, rel_path))
+        if not path.startswith(BASE_DIR) or not os.path.isfile(path):
+            return self._send_json({"error": "Not found"}, 404)
+        with open(path, "rb") as f:
             body = f.read()
+        content_type = STATIC_TYPES.get(os.path.splitext(path)[1], "text/plain")
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _send_html_file(self):
+        self._send_file("index.html")
 
     def _read_json(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -40,6 +55,8 @@ class TaskRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/index.html"):
             self._send_html_file()
+        elif self.path.startswith("/static/"):
+            self._send_file(self.path.lstrip("/"))
         elif self.path == "/api/tasks":
             self._send_json(TASKS.to_list())
         else:
